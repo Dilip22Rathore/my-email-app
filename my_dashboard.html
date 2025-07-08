@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Sheet AI Dashboard</title>
+    <!-- Tailwind CSS CDN for modern styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js CDN for creating interactive charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- PapaParse CDN for easy CSV parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <style>
+        /* Custom styles for Inter font and general layout */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* Light gray background */
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb; /* Light gray border */
+        }
+        th {
+            background-color: #f9fafb; /* Slightly darker header background */
+            font-weight: 600;
+            color: #374151; /* Darker text color */
+        }
+        tr:hover {
+            background-color: #f3f4f6; /* Hover effect for table rows */
+        }
+        .chart-container {
+            position: relative;
+            height: 400px; /* Fixed height for charts */
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        /* Custom scrollbar for table container */
+        .table-wrapper {
+            overflow-x: auto;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+        }
+        .table-wrapper::-webkit-scrollbar {
+            height: 8px;
+        }
+        .table-wrapper::-webkit-scrollbar-thumb {
+            background-color: #cbd5e0; /* Gray-300 */
+            border-radius: 4px;
+        }
+        .table-wrapper::-webkit-scrollbar-track {
+            background-color: #f7fafc; /* Gray-50 */
+        }
+        /* Styling for clickable table rows */
+        .table-row-clickable {
+            cursor: pointer; /* Indicate that the row is interactive */
+        }
+        /* Hover effect for clickable table rows */
+        .table-row-clickable:hover {
+            background-color: #e0f2f7; /* Light blue on hover */
+        }
+        /* Styling for the selected table row */
+        .table-row-selected {
+            background-color: #bfdbfe; /* Tailwind blue-200 for selected row */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-4">
+    <div class="container bg-white shadow-lg rounded-lg p-6">
+        <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">Google Sheet AI Dashboard</h1>
+
+        <!-- Instructions and URL Input Section -->
+        <div class="mb-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <h2 class="text-xl font-semibold text-blue-800 mb-3">How to Prepare Your Google Sheet:</h2>
+            <ol class="list-decimal list-inside text-gray-700 mb-4">
+                <li class="mb-1">Open your Google Sheet (e.g., with email metrics).</li>
+                <li class="mb-1">Go to <span class="font-bold">File &gt; Share &gt; Publish to web</span>.</li>
+                <li class="mb-1">Under "Link", choose the entire document or the specific sheet you want to publish.</li>
+                <li class="mb-1">For "Publish as", select <span class="font-bold">Comma-separated values (.csv)</span>.</li>
+                <li class="mb-1">Click the <span class="font-bold">Publish</span> button.</li>
+                <li class="mb-1">Copy the provided URL and paste it into the "Google Sheet CSV URL" field below.</li>
+            </ol>
+            <p class="text-red-600 font-medium mb-4">
+                <strong class="font-bold">Important:</strong> Ensure your sheet's first row contains your column headers (e.g., "Email Name", "Open Rate", "Click Rate").
+            </p>
+
+            <div class="flex flex-col md:flex-row items-center gap-4">
+                <input type="text" id="sheetUrl" placeholder="Enter Google Sheet CSV URL (e.g., https://docs.google.com/spreadsheets/d/.../pub?output=csv)"
+                       class="flex-grow p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700">
+                <button id="loadDataBtn"
+                        class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-md shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+                    Load Data
+                </button>
+            </div>
+        </div>
+
+        <!-- Filters Section (Hidden until data is loaded) -->
+        <div id="filtersSection" class="mb-8 p-4 bg-green-50 rounded-lg border border-green-200 hidden">
+            <h2 class="text-xl font-semibold text-green-800 mb-3">Filters</h2>
+            <div id="filterControls" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Filter dropdowns will be dynamically added here -->
+            </div>
+            <button id="applyFiltersBtn"
+                    class="mt-4 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-5 rounded-md shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+                Apply Filters
+            </button>
+            <button id="clearFiltersBtn"
+                    class="mt-4 ml-2 bg-gray-400 hover:bg-gray-500 text-white font-bold py-2 px-5 rounded-md shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+                Clear Filters
+            </button>
+        </div>
+
+        <!-- Chart Configuration Section (Hidden until data is loaded) -->
+        <div id="chartConfigSection" class="mb-8 p-4 bg-purple-50 rounded-lg border border-purple-200 hidden">
+            <h2 class="text-xl font-semibold text-purple-800 mb-3">Chart Configuration</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                    <label for="chartType" class="block text-gray-700 text-sm font-bold mb-2">Chart Type:</label>
+                    <select id="chartType" class="w-full p-2 border border-gray-300 rounded-md">
+                        <option value="bar">Bar Chart</option>
+                        <option value="line">Line Chart</option>
+                        <option value="pie">Pie Chart</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="chartXAxis" class="block text-gray-700 text-sm font-bold mb-2">X-Axis (Labels):</label>
+                    <select id="chartXAxis" class="w-full p-2 border border-gray-300 rounded-md">
+                        <!-- Options will be populated dynamically -->
+                    </select>
+                </div>
+                <div>
+                    <label for="chartYAxis" class="block text-gray-700 text-sm font-bold mb-2">Y-Axis (Values):</label>
+                    <select id="chartYAxis" class="w-full p-2 border border-gray-300 rounded-md">
+                        <!-- Options will be populated dynamically -->
+                    </select>
+                </div>
+            </div>
+            <button id="generateChartBtn"
+                    class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-5 rounded-md shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+                Generate Chart
+            </button>
+        </div>
+
+        <!-- Charts Display Section -->
+        <div id="chartsDisplay" class="mb-8 hidden">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">Charts</h2>
+            <div id="chartContainer" class="chart-container border border-gray-300 rounded-md p-2 bg-white">
+                <canvas id="myChart"></canvas>
+            </div>
+            <p id="noChartMessage" class="text-center text-gray-500 mt-4 hidden">No chart generated yet. Configure and click 'Generate Chart'.</p>
+        </div>
+
+        <!-- Data Table Section -->
+        <div id="dataTableSection" class="mb-8 hidden">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">Data Table</h2>
+            <div class="table-wrapper">
+                <table id="dataTable" class="min-w-full bg-white">
+                    <thead>
+                        <tr id="tableHeader">
+                            <!-- Table headers will be dynamically added here -->
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                        <!-- Table rows will be dynamically added here -->
+                    </tbody>
+                </table>
+            </div>
+            <p id="noDataMessage" class="text-center text-gray-500 mt-4 hidden">No data loaded yet. Please enter a Google Sheet CSV URL and click 'Load Data'.</p>
+        </div>
+
+        <!-- AI Insights Section -->
+        <div id="aiInsightsSection" class="bg-orange-50 rounded-lg border border-orange-200 p-6 hidden">
+            <h2 class="text-xl font-semibold text-orange-700 mb-4">
+                AI-Powered Data Insights
+            </h2>
+            <p class="text-sm text-gray-600 mb-4">
+                Select a row from the table above, then click the button below to get an AI-driven analysis of its data.
+            </p>
+            <button id="getAiInsightsBtn"
+                    class="w-full py-3 px-6 rounded-md text-lg font-semibold transition duration-300 ease-in-out
+                           bg-gray-300 text-gray-600 cursor-not-allowed"
+                    disabled>
+                ✨ Get AI Insights on Selected Row
+            </button>
+
+            <div id="aiInsightDisplay" class="mt-6 p-4 bg-orange-100 border border-orange-300 rounded-md shadow-inner hidden">
+                <h3 class="text-md font-semibold text-orange-800 mb-2">Analysis:</h3>
+                <p id="aiInsightText" class="text-gray-700 whitespace-pre-wrap"></p>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // Global variables to store data and chart instance
+        let rawData = []; // Stores the original data from the CSV
+        let filteredData = []; // Stores data after applying filters
+        let headers = []; // Stores column headers
+        let myChart = null; // Stores the Chart.js instance
+        let selectedRowData = null; // Stores the data of the currently selected table row
+
+        // Get DOM elements
+        const sheetUrlInput = document.getElementById('sheetUrl');
+        const loadDataBtn = document.getElementById('loadDataBtn');
+        const filtersSection = document.getElementById('filtersSection');
+        const filterControls = document.getElementById('filterControls');
+        const applyFiltersBtn = document.getElementById('applyFiltersBtn');
+        const clearFiltersBtn = document.getElementById('clearFiltersBtn');
+        const chartConfigSection = document.getElementById('chartConfigSection');
+        const chartTypeSelect = document.getElementById('chartType');
+        const chartXAxisSelect = document.getElementById('chartXAxis');
+        const chartYAxisSelect = document.getElementById('chartYAxis');
+        const generateChartBtn = document.getElementById('generateChartBtn');
+        const chartsDisplay = document.getElementById('chartsDisplay');
+        const chartContainer = document.getElementById('chartContainer');
+        const myChartCanvas = document.getElementById('myChart');
+        const noChartMessage = document.getElementById('noChartMessage');
+        const dataTableSection = document.getElementById('dataTableSection');
+        const tableHeader = document.getElementById('tableHeader');
+        const tableBody = document.getElementById('tableBody');
+        const noDataMessage = document.getElementById('noDataMessage');
+        const aiInsightsSection = document.getElementById('aiInsightsSection');
+        const getAiInsightsBtn = document.getElementById('getAiInsightsBtn');
+        const aiInsightDisplay = document.getElementById('aiInsightDisplay');
+        const aiInsightText = document.getElementById('aiInsightText');
+
+        /**
+         * Custom function to display a modal-style alert message.
+         * This replaces `window.alert()` for better UI/UX in a web app.
+         * @param {string} message - The message to display in the alert.
+         */
+        function showCustomAlert(message) {
+            const existingModal = document.getElementById('customAlertModal');
+            if (existingModal) existingModal.remove();
+
+            const modalHtml = `
+                <div id="customAlertModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
+                    <div class="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full text-center">
+                        <h3 class="text-lg font-bold mb-4 text-gray-800">Notification</h3>
+                        <p class="font-sans text-gray-700 mb-6">${message}</p>
+                        <div class="flex justify-end">
+                            <button id="alertCloseBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out transform hover:scale-105">
+                                OK
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            document.getElementById('alertCloseBtn').addEventListener('click', () => {
+                document.getElementById('customAlertModal').remove();
+            });
+        }
+
+        /**
+         * Parses CSV text into an array of objects using PapaParse.
+         * Assumes the first row is the header.
+         * @param {string} csvText - The CSV data as a string.
+         * @returns {Array<Object>} An array of objects, where each object represents a row.
+         */
+        function parseCSV(csvText) {
+            const results = Papa.parse(csvText, {
+                header: true, // Treat the first row as headers
+                skipEmptyLines: true,
+                dynamicTyping: true // Automatically convert numbers and booleans
+            });
+
+            if (results.errors.length > 0) {
+                console.error("CSV parsing errors:", results.errors);
+                showCustomAlert("Errors encountered while parsing CSV. Please check your sheet format.");
+            }
+
+            // Store headers from PapaParse results
+            headers = results.meta.fields;
+            return results.data;
+        }
+
+        /**
+         * Displays data in the HTML table and adds row click listeners.
+         * @param {Array<Object>} dataToDisplay - The data to be displayed in the table.
+         */
+        function renderTable(dataToDisplay) {
+            tableHeader.innerHTML = ''; // Clear existing headers
+            tableBody.innerHTML = ''; // Clear existing rows
+            selectedRowData = null; // Clear selected row on re-render
+            updateAiInsightsButtonState(); // Update button state
+            aiInsightDisplay.classList.add('hidden'); // Hide insight display
+            aiInsightText.textContent = ''; // Clear insight text
+
+            if (dataToDisplay.length === 0) {
+                noDataMessage.classList.remove('hidden');
+                dataTableSection.classList.add('hidden');
+                aiInsightsSection.classList.add('hidden');
+                return;
+            }
+
+            dataTableSection.classList.remove('hidden');
+            noDataMessage.classList.add('hidden');
+            aiInsightsSection.classList.remove('hidden');
+
+            // Create table headers
+            headers.forEach(header => {
+                const th = document.createElement('th');
+                th.textContent = header;
+                th.classList.add('px-4', 'py-2', 'whitespace-nowrap');
+                tableHeader.appendChild(th);
+            });
+
+            // Create table rows and add click listeners
+            dataToDisplay.forEach((row, index) => {
+                const tr = document.createElement('tr');
+                tr.classList.add('table-row-clickable');
+                tr.dataset.rowIndex = index; // Store original index for reference
+
+                tr.addEventListener('click', () => {
+                    // Remove selected class from all rows
+                    document.querySelectorAll('#tableBody tr').forEach(r => {
+                        r.classList.remove('table-row-selected');
+                    });
+
+                    // Add selected class to the clicked row
+                    tr.classList.add('table-row-selected');
+                    selectedRowData = row; // Store the data of the clicked row
+                    aiInsightDisplay.classList.add('hidden'); // Hide previous insight
+                    aiInsightText.textContent = ''; // Clear previous insight text
+                    updateAiInsightsButtonState(); // Enable AI button
+                });
+
+                headers.forEach(header => {
+                    const td = document.createElement('td');
+                    td.textContent = row[header];
+                    td.classList.add('px-4', 'py-2', 'whitespace-nowrap');
+                    tr.appendChild(td);
+                });
+                tableBody.appendChild(tr);
+            });
+        }
+
+        /**
+         * Populates the filter controls and chart axis dropdowns based on available headers.
+         */
+        function populateControls() {
+            filterControls.innerHTML = ''; // Clear previous filter controls
+            chartXAxisSelect.innerHTML = '<option value="">Select X-Axis</option>';
+            chartYAxisSelect.innerHTML = '<option value="">Select Y-Axis</option>';
+
+            headers.forEach(header => {
+                // Create filter dropdowns
+                const filterDiv = document.createElement('div');
+                filterDiv.classList.add('flex', 'flex-col');
+
+                const label = document.createElement('label');
+                label.textContent = `Filter by ${header}:`;
+                label.classList.add('block', 'text-gray-700', 'text-sm', 'font-bold', 'mb-2');
+                filterDiv.appendChild(label);
+
+                const select = document.createElement('select');
+                select.id = `filter-${header.replace(/\s+/g, '-')}`; // Create a valid ID
+                select.classList.add('w-full', 'p-2', 'border', 'border-gray-300', 'rounded-md');
+                select.innerHTML = '<option value="">All</option>'; // Default "All" option
+
+                // Get unique values for this column to populate filter options
+                const uniqueValues = [...new Set(rawData.map(row => row[header]))]
+                                    .filter(value => value !== null && value !== undefined && value !== '')
+                                    .sort();
+                uniqueValues.forEach(value => {
+                    const option = document.createElement('option');
+                    option.value = value;
+                    option.textContent = value;
+                    select.appendChild(option);
+                });
+                filterDiv.appendChild(select);
+                filterControls.appendChild(filterDiv);
+
+                // Populate chart axis dropdowns
+                const xAxisOption = document.createElement('option');
+                xAxisOption.value = header;
+                xAxisOption.textContent = header;
+                chartXAxisSelect.appendChild(xAxisOption);
+
+                const yAxisOption = document.createElement('option');
+                yAxisOption.value = header;
+                yAxisOption.textContent = header;
+                chartYAxisSelect.appendChild(yAxisOption);
+            });
+
+            filtersSection.classList.remove('hidden');
+            chartConfigSection.classList.remove('hidden');
+        }
+
+        /**
+         * Applies filters based on the selected values in the filter controls.
+         */
+        function applyFilters() {
+            filteredData = [...rawData]; // Start with all raw data
+
+            headers.forEach(header => {
+                const filterSelect = document.getElementById(`filter-${header.replace(/\s+/g, '-')}`);
+                if (filterSelect && filterSelect.value !== '') {
+                    const filterValue = filterSelect.value;
+                    filteredData = filteredData.filter(row => String(row[header]) === filterValue); // Convert to string for comparison
+                }
+            });
+
+            renderTable(filteredData);
+            generateChart(); // Regenerate chart with filtered data
+        }
+
+        /**
+         * Clears all applied filters and re-renders the table and charts with raw data.
+         */
+        function clearFilters() {
+            headers.forEach(header => {
+                const filterSelect = document.getElementById(`filter-${header.replace(/\s+/g, '-')}`);
+                if (filterSelect) {
+                    filterSelect.value = ''; // Reset dropdowns to "All"
+                }
+            });
+            filteredData = [...rawData]; // Reset filtered data to raw data
+            renderTable(filteredData);
+            generateChart(); // Regenerate chart with raw data
+        }
+
+        /**
+         * Generates a chart using Chart.js based on selected options.
+         */
+        function generateChart() {
+            const chartType = chartTypeSelect.value;
+            const xAxisColumn = chartXAxisSelect.value;
+            const yAxisColumn = chartYAxisSelect.value;
+
+            noChartMessage.classList.add('hidden');
+            chartsDisplay.classList.remove('hidden');
+
+            if (!xAxisColumn || !yAxisColumn) {
+                noChartMessage.classList.remove('hidden');
+                chartContainer.classList.add('hidden');
+                if (myChart) {
+                    myChart.destroy(); // Destroy existing chart if axes are not selected
+                    myChart = null;
+                }
+                return;
+            }
+
+            chartContainer.classList.remove('hidden');
+
+            // Aggregate data for charts, especially for bar/pie if x-axis has duplicates
+            const aggregatedData = {};
+            filteredData.forEach(row => {
+                const label = row[xAxisColumn];
+                const value = parseFloat(row[yAxisColumn]);
+                if (!isNaN(value)) {
+                    aggregatedData[label] = (aggregatedData[label] || 0) + value;
+                }
+            });
+
+            const chartLabels = Object.keys(aggregatedData);
+            const chartValues = Object.values(aggregatedData);
+
+            // Destroy existing chart instance if it exists
+            if (myChart) {
+                myChart.destroy();
+            }
+
+            // Create new chart
+            myChart = new Chart(myChartCanvas, {
+                type: chartType,
+                data: {
+                    labels: chartLabels,
+                    datasets: [{
+                        label: `${yAxisColumn} by ${xAxisColumn}`,
+                        data: chartValues,
+                        backgroundColor: chartType === 'pie' ? [
+                            'rgba(255, 99, 132, 0.6)', 'rgba(54, 162, 235, 0.6)', 'rgba(255, 206, 86, 0.6)',
+                            'rgba(75, 192, 192, 0.6)', 'rgba(153, 102, 255, 0.6)', 'rgba(255, 159, 64, 0.6)',
+                            'rgba(199, 199, 199, 0.6)', 'rgba(83, 102, 255, 0.6)', 'rgba(40, 159, 64, 0.6)',
+                            'rgba(210, 99, 132, 0.6)'
+                        ] : 'rgba(75, 192, 192, 0.6)', // Solid color for bar/line
+                        borderColor: chartType === 'pie' ? [
+                            'rgba(255, 99, 132, 1)', 'rgba(54, 162, 235, 1)', 'rgba(255, 206, 86, 1)',
+                            'rgba(75, 192, 192, 1)', 'rgba(153, 102, 255, 1)', 'rgba(255, 159, 64, 1)',
+                            'rgba(199, 199, 199, 1)', 'rgba(83, 102, 255, 1)', 'rgba(40, 159, 64, 1)',
+                            'rgba(210, 99, 132, 1)'
+                        ] : 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: chartType === 'pie' ? true : false, // Only show legend for pie charts
+                            position: 'top',
+                        },
+                        title: {
+                            display: true,
+                            text: `${chartType.charAt(0).toUpperCase() + chartType.slice(1)} Chart of ${yAxisColumn} by ${xAxisColumn}`
+                        }
+                    },
+                    scales: chartType !== 'pie' ? {
+                        x: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: xAxisColumn
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: yAxisColumn
+                            }
+                        }
+                    } : {} // No scales for pie chart
+                }
+            });
+        }
+
+        /**
+         * Updates the state of the AI Insights button (enabled/disabled).
+         */
+        function updateAiInsightsButtonState() {
+            if (selectedRowData) {
+                getAiInsightsBtn.disabled = false;
+                getAiInsightsBtn.classList.remove('bg-gray-300', 'text-gray-600', 'cursor-not-allowed');
+                getAiInsightsBtn.classList.add('bg-orange-500', 'text-white', 'hover:bg-orange-600', 'shadow-md');
+            } else {
+                getAiInsightsBtn.disabled = true;
+                getAiInsightsBtn.classList.remove('bg-orange-500', 'text-white', 'hover:bg-orange-600', 'shadow-md');
+                getAiInsightsBtn.classList.add('bg-gray-300', 'text-gray-600', 'cursor-not-allowed');
+            }
+        }
+
+        /**
+         * Calls the Gemini API to get AI-powered insights for the currently selected row.
+         */
+        async function getAiInsights() {
+            if (!selectedRowData) {
+                showCustomAlert("Please select a row from the table first to get insights.");
+                return;
+            }
+
+            // Disable button and show loading state
+            getAiInsightsBtn.disabled = true;
+            getAiInsightsBtn.textContent = 'Generating insights...';
+            aiInsightDisplay.classList.add('hidden'); // Hide previous insight
+            aiInsightText.textContent = ''; // Clear previous insight text
+
+            // Construct the prompt for the AI model based on the selected row's data
+            let prompt = `As a data analyst, analyze the following data point from a Google Sheet. Provide potential reasons for these metrics and suggest actionable insights for improvement.
+
+Data Point:
+`;
+            for (const key in selectedRowData) {
+                if (Object.hasOwnProperty.call(selectedRowData, key)) {
+                    prompt += `${key}: ${selectedRowData[key]}\n`;
+                }
+            }
+
+            let chatHistory = [];
+            chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+            const payload = { contents: chatHistory };
+            const apiKey = "" // API key will be provided by Canvas runtime
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+
+                // --- START OF IMPROVED ERROR HANDLING/LOGGING ---
+                console.log("Gemini API Response:", result); // Log the full response for debugging
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const text = result.candidates[0].content.parts[0].text;
+                    aiInsightText.textContent = text; // Display the AI insight
+                    aiInsightDisplay.classList.remove('hidden'); // Show the insight display
+                } else {
+                    // More specific message if no valid content is found
+                    aiInsightText.textContent = "Failed to get insights. The AI did not generate a valid response. This might be due to the data, a temporary service issue, or content policy.";
+                    aiInsightDisplay.classList.remove('hidden');
+                    console.error("Unexpected AI response structure or no content generated:", result);
+                }
+                // --- END OF IMPROVED ERROR HANDLING/LOGGING ---
+
+            } catch (error) {
+                console.error("Error fetching AI insights:", error);
+                aiInsightText.textContent = "Error generating insights. Please try again. Ensure your browser allows API calls and your internet connection is stable.";
+                aiInsightDisplay.classList.remove('hidden');
+            } finally {
+                getAiInsightsBtn.textContent = '✨ Get AI Insights on Selected Row';
+                updateAiInsightsButtonState(); // Re-enable button if a row is still selected
+            }
+        }
+
+
+        /**
+         * Fetches data from the provided Google Sheet CSV URL.
+         */
+        async function loadData() {
+            const sheetUrl = sheetUrlInput.value.trim();
+            if (!sheetUrl) {
+                showCustomAlert('Please enter a Google Sheet CSV URL.');
+                return;
+            }
+
+            try {
+                // Show loading indicator
+                loadDataBtn.textContent = 'Loading...';
+                loadDataBtn.disabled = true;
+
+                const response = await fetch(sheetUrl);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const csvText = await response.text();
+
+                rawData = parseCSV(csvText);
+                filteredData = [...rawData]; // Initialize filtered data with raw data
+
+                if (rawData.length === 0) {
+                    showCustomAlert('No data found in the Google Sheet or unable to parse. Please check the URL and sheet content.');
+                    noDataMessage.classList.remove('hidden');
+                    dataTableSection.classList.add('hidden');
+                    filtersSection.classList.add('hidden');
+                    chartConfigSection.classList.add('hidden');
+                    chartsDisplay.classList.add('hidden');
+                    aiInsightsSection.classList.add('hidden');
+                    return;
+                }
+
+                renderTable(filteredData);
+                populateControls();
+                generateChart(); // Generate initial chart after data load
+                aiInsightsSection.classList.remove('hidden'); // Show AI section
+                updateAiInsightsButtonState(); // Update AI button state
+
+            } catch (error) {
+                console.error('Error loading data:', error);
+                showCustomAlert(`Failed to load data. Please ensure the URL is correct and the sheet is published as CSV. Error: ${error.message}`);
+                noDataMessage.classList.remove('hidden');
+                dataTableSection.classList.add('hidden');
+                filtersSection.classList.add('hidden');
+                chartConfigSection.classList.add('hidden');
+                chartsDisplay.classList.add('hidden');
+                aiInsightsSection.classList.add('hidden');
+            } finally {
+                loadDataBtn.textContent = 'Load Data';
+                loadDataBtn.disabled = false;
+            }
+        }
+
+        // Event Listeners
+        loadDataBtn.addEventListener('click', loadData);
+        applyFiltersBtn.addEventListener('click', applyFilters);
+clearFiltersBtn.addEventListener('click', () => {
+    clearFilters();
+    // Also clear selected row and AI insight when filters are cleared
+    selectedRowData = null;
+    aiInsightDisplay.classList.add('hidden');
+    aiInsightText.textContent = '';
+    updateAiInsightsButtonState();
+    // Remove selected class from all rows in the table
+    document.querySelectorAll('#tableBody tr').forEach(r => {
+        r.classList.remove('table-row-selected');
+    });
+});
+        generateChartBtn.addEventListener('click', generateChart);
+        getAiInsightsBtn.addEventListener('click', getAiInsights);
+
+        // Initial state: hide sections until data is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            filtersSection.classList.add('hidden');
+            chartConfigSection.classList.add('hidden');
+            chartsDisplay.classList.add('hidden');
+            dataTableSection.classList.add('hidden');
+            aiInsightsSection.classList.add('hidden');
+            noDataMessage.classList.remove('hidden');
+            noChartMessage.classList.remove('hidden');
+            updateAiInsightsButtonState(); // Set initial button state to disabled
+        });
+
+    </script>
+</body>
+</html>
